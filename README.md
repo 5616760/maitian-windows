@@ -56,6 +56,18 @@ node src/init.mjs                    # 安装向导（会生成 config.json）
 **已验证**：demo 全链路、`hub doctor` 七平台页面打开与登录检测、`hub daemon` 常驻 + web 面板、CDP 上传文件（`DOM.setFileInputFiles`）、登录自启。
 **未验证**：各平台真实上传发布流程（需登录账号后逐平台实测，属风控敏感操作）。
 
+### 同步上游更新
+
+本仓库是 GitHub 上的 **fork**（parent: `CzzzzzzJ/mdldm-maitian`），保留完整上游提交历史。跟进原作者更新：
+
+```bash
+git remote add upstream https://github.com/CzzzzzzJ/mdldm-maitian.git   # 只需一次
+git fetch upstream
+git merge upstream/main        # 冲突通常只在被本分支改过的 8 个文件
+```
+
+冲突处理原则：**上游逻辑优先，只在其上重新套 `IS_WIN` 分支**。平台适配都集中在 `src/win.mjs` 和若干处 `if (IS_WIN)`，冲突面很小。
+
 ### 原作者的边界仍然有效
 
 原作的核心原则本分支**完全保留**：国内四家（B站/抖音/小红书/视频号）只填写、不发布，最后一下由你自己点；每平台只传一次；小红书走最保守路径。请勿改成全自动——这是原作者用真实风控经验换来的设计。
