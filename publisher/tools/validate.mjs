@@ -1,13 +1,13 @@
 // node tools/validate.mjs <NAS 工程目录>  —— 校验 publish.json：文件是否齐全、各平台字段和字数
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { validate, PLATFORMS, len } from '../lib/bundle.js';
 
 const dir = process.argv[2];
 if (!dir) { console.error('用法：node tools/validate.mjs <工程目录>'); process.exit(2); }
 const b = JSON.parse(readFileSync(join(dir, 'publish.json'), 'utf8'));
 const files = new Set();
-const walk = (d) => readdirSync(d).forEach(n => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : files.add(relative(dir, p)); });
+const walk = (d) => readdirSync(d).forEach(n => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : files.add(relative(dir, p).split(sep).join('/')); });
 walk(dir);
 const { errors, warnings } = validate(b, files);
 // 成片的 moov 必须在文件头（faststart），否则小红书报「无视频流信息」、抖音不出表单（2026-11-12 第 37 期）

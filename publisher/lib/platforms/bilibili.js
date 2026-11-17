@@ -1,5 +1,5 @@
 import { evaluate, setFiles, insertText, pressKey, sleep, waitFor, setValue, byText, click, fire } from '../cdp.js';
-import { checkTitle } from './common.js';
+import { checkTitle, waitUploaded } from './common.js';
 
 const TITLE = `document.querySelector('input[placeholder="请输入稿件标题"]')`;
 const TAG_INPUT = `document.querySelector('input[placeholder="按回车键Enter创建标签"]')`;
@@ -64,7 +64,8 @@ export default {
     const { tabId: T, p } = ctx;
     await setFiles(T, `document.querySelector('.bcc-upload-wrapper input[type=file]')`, [ctx.video]);
     ctx.log('视频开始上传');
-    if (!await waitFor(T, `!!${TITLE}`, 30000)) throw new Error('上传后没有出现稿件表单');
+    // 大文件上传比 30 秒长得多：按体积估算等待时长，并报出实际用时
+    await waitUploaded(ctx, `!!${TITLE}`, '稿件表单', ctx.video);
     await sleep(1500);
 
     // 封面：B 站的封面编辑器要渲染画布，后台标签页里做不成，切到前台做，做完回读确认
@@ -122,7 +123,9 @@ export default {
     ctx.note('还需要你选「创作声明」（必填）');
   },
 
+  uploadNeedsFront: true,   // 后台标签上传会报「系统异常」，必须前台
   uploadDone: `document.body.innerText.includes('上传完成')`,
+  uploadFailed: `(()=>{const t=document.body.innerText; if(/上传过程中出现系统异常|上传失败/.test(t)) return t.match(/.{0,20}(上传过程中出现系统异常|上传失败).{0,20}/)[0]; return null})()`,
 
   // 发布后回传链接：稿件管理页的接口能直接拿到 BV 号、状态和定时时间
   links: {

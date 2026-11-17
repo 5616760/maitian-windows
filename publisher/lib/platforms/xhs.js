@@ -1,5 +1,5 @@
 import { evaluate, setFiles, sleep, waitFor, setValue, focusEnd, typeLines, pressKey, hover, click, byText, fire, insertText } from '../cdp.js';
-import { pickTopics, checkTitle } from './common.js';
+import { pickTopics, checkTitle, waitUploaded } from './common.js';
 
 const TITLE = `document.querySelector('input[placeholder="填写标题会有更多赞哦"]')`;
 const EDITOR = `document.querySelector('.tiptap.ProseMirror')`;
@@ -31,7 +31,7 @@ export default {
     const { tabId: T, p } = ctx;
     await setFiles(T, `document.querySelector('input[type=file]')`, [ctx.video]);
     ctx.log('视频开始上传');
-    if (!await waitFor(T, `!!${TITLE}`, 30000)) throw new Error('上传后没有出现笔记表单');
+    await waitUploaded(ctx, `!!${TITLE}`, '笔记表单', ctx.video);
     await sleep(1500);
     await click(T, byText('我知道了'));   // 「PK 封面」引导弹窗，有就关掉
 
@@ -52,7 +52,9 @@ export default {
     ctx.note('封面要等视频上传完才能设置，传完会自动补上');
   },
 
+  uploadNeedsFront: true,   // 后台标签上传会掉到几十 KB/s
   uploadDone: `(()=>{const t=document.body.innerText; return !t.includes('上传中') && !t.includes('取消上传') && !!document.querySelector('.cover .default')})()`,
+  uploadFailed: `(()=>{const t=document.body.innerText; if(/上传失败|网络异常|无视频流信息/.test(t)) return t.match(/.{0,15}(上传失败|网络异常|无视频流信息).{0,25}/)[0]; return null})()`,
 
   // 视频传完后：悬停封面 → 编辑封面 → 上传 3:4 → 裁剪比例改成 3:4 → 完成
   async afterUpload(ctx) {

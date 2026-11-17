@@ -1,5 +1,5 @@
 import { evaluate, setFiles, sleep, waitFor, insertText, focusEnd, typeLines, pressKey, click, byText, fire } from '../cdp.js';
-import { checkTitle } from './common.js';
+import { checkTitle, waitUploaded } from './common.js';
 
 // 视频号助手的表单在 wujie 微前端的 Shadow DOM 里
 const R = `document.querySelector('wujie-app').shadowRoot`;
@@ -44,7 +44,7 @@ export default {
     const { tabId: T, p } = ctx;
     await setFiles(T, `${R}.querySelector('input[type=file][accept^=video]')`, [ctx.video]);
     ctx.log('视频开始上传');
-    if (!await waitFor(T, `!!${SHORT} && !!${EDITOR}`, 30000)) throw new Error('上传后没有出现表单');
+    await waitUploaded(ctx, `!!${SHORT} && !!${EDITOR}`, '表单', ctx.video);
     await sleep(1500);
 
     await evaluate(T, `${SHORT}.focus()`);
@@ -66,7 +66,9 @@ export default {
     ctx.note('封面要等视频上传完才能设置，传完会自动补上');
   },
 
+  // 视频在 wujie-app 的 shadowRoot 里，用 shadowRoot 的文本判断（原版判断是对的，别用 document.querySelector('video')）
   uploadDone: `!${R}.textContent.includes('取消上传')`,
+  uploadFailed: `(()=>{const t=document.body.innerText; if(/上传失败|上传出错|视频上传失败/.test(t)) return t.match(/.{0,15}(上传失败|上传出错|视频上传失败).{0,25}/)[0]; return null})()`,
 
   // 视频传完后：个人主页卡片 3:4、分享卡片 4:3
   async afterUpload(ctx) {

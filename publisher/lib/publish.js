@@ -155,6 +155,12 @@ export async function run(project, opts) {
       // 用预检时在后台打开的页面，不抢用户正在看的页面
       st.tabId = ctx.tabId = pre[id].tabId;
       await sleep(1000);
+      // 有些平台的上传在后台标签里会被浏览器节流到几十 KB/s 甚至直接失败（B站 2026-11-17 实测：
+      // 同一个 78MB 文件，后台标签报「上传过程中出现系统异常」，切到前台就 95 秒传完）。
+      // 这些适配器声明 uploadNeedsFront，填内容前先把标签切到前台。
+      if (ad.uploadNeedsFront) {
+        try { await chrome.tabs.update(ctx.tabId, { active: true }); await sleep(800); } catch { /* 切不过去就按原样跑 */ }
+      }
       st.set('填写中');
       await ad.fill(ctx);
       st.set(st.failed ? '异常' : (ad.uploadDone ? '上传中' : '已填写'));
@@ -174,6 +180,12 @@ export async function run(project, opts) {
       try { done = await evaluate(ctx.tabId, ad.uploadDone); }
       catch (e) { st.fail(`页面丢失：${e.message}`); st.set('异常'); pending.splice(pending.indexOf(item), 1); continue; }
       if (!done) {
+        // 上传中途失败时，平台会显示错误、上传条消失，但页面没人管就会一直「上传中」。
+        // 适配器可以声明 uploadFailed 表达式，命中就立刻记异常，不再傻等。
+        if (ad.uploadFailed) {
+          const bad = await evaluate(ctx.tabId, ad.uploadFailed).catch(() => null);
+          if (bad) { st.fail(`上传失败：${bad}`); st.set('异常'); pending.splice(pending.indexOf(item), 1); continue; }
+        }
         // 适配器可以提供进度表达式（比如上传百分比），显示在状态卡上
         if (ad.progress) { const txt = await evaluate(ctx.tabId, ad.progress).catch(() => ''); if (txt && txt !== st.status) st.set(txt); }
         continue;

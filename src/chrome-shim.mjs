@@ -24,7 +24,10 @@ export async function launchChrome({ foreground = false } = {}) {
   try { await version(); } catch {
     fs.mkdirSync(PROFILE, { recursive: true });
     const args = [`--user-data-dir=${PROFILE}`, `--remote-debugging-port=${PORT}`, '--no-first-run', '--no-default-browser-check',
-      '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--window-size=1500,1000'];
+      '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--window-size=1500,1000',
+      // 国内平台（B站/小红书/抖音/视频号）走系统代理会绕到海外节点，上传速度掉到几十 KB/s 甚至断流（2026-11-17 实测）。
+      // 专用浏览器只用来看这几个后台，统一直连；需要代理时改 config.proxy 手动开。
+      ...(config.proxy ? [`--proxy-server=${config.proxy}`] : ['--no-proxy-server'])];
     spawn(bin(), args, { detached: true, stdio: 'ignore', ...(IS_WIN ? { windowsHide: true } : {}) }).unref();
     for (let i = 0; i < 30; i++) { await sleep(500); try { await version(); break; } catch { if (i === 29) throw new Error('专用 Chrome 没启动起来'); } }
   }

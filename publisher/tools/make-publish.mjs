@@ -12,7 +12,7 @@
 //   ## 九、Instagram 整节就是配文（链接点不了，话题标签写在末尾）
 // 工程目录里：成片.mp4、封面/cover-3x4.png、cover-4x3.png、cover-16x9.jpg（有哪个用哪个）
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, basename, dirname } from 'node:path';
+import { join, relative, basename, dirname, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validate } from '../lib/bundle.js';
@@ -61,7 +61,7 @@ if (schedule && !/T/.test(schedule)) schedule = schedule.trim().replace(' ', 'T'
 
 // 工程目录里的文件
 const files = [];
-const walk = (d) => readdirSync(d).forEach(n => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : files.push(relative(dir, p)); });
+const walk = (d) => readdirSync(d).forEach(n => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : files.push(relative(dir, p).split(sep).join('/')); });
 walk(dir);
 const video = files.includes('成片.mp4') ? '成片.mp4' : null;
 const covers = {};

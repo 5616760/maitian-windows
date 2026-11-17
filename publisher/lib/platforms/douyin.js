@@ -1,5 +1,5 @@
 import { evaluate, setFiles, sleep, waitFor, insertText, focusEnd, typeLines, pressKey, click, byText, firstByText } from '../cdp.js';
-import { pickTopics, checkTitle } from './common.js';
+import { pickTopics, checkTitle, waitUploaded } from './common.js';
 
 const TITLE = `document.querySelector('input[placeholder="填写作品标题，为作品获得更多流量"]')`;
 const EDITOR = `document.querySelector('.editor-kit-container[contenteditable=true]')`;
@@ -32,7 +32,7 @@ export default {
     const { tabId: T, p } = ctx;
     await setFiles(T, `document.querySelector('input[type=file]')`, [ctx.video]);
     ctx.log('视频开始上传');
-    if (!await waitFor(T, `!!${TITLE}`, 30000)) throw new Error('上传后没有出现作品表单');
+    await waitUploaded(ctx, `!!${TITLE}`, '作品表单', ctx.video);
     await sleep(1500);
 
     await evaluate(T, `${TITLE}.focus()`);
@@ -67,7 +67,10 @@ export default {
     if (ctx.schedule) await schedule(ctx);
   },
 
-  uploadDone: `!document.body.innerText.includes('上传过程中')`,
+  uploadNeedsFront: true,   // 后台标签上传慢/失败，切前台更稳
+  // 传完的标志：不再「上传过程中」，且标题框在、没报失败（原版只看前半句，会在刚开始上传时就为真）
+  uploadDone: `(()=>{const t=document.body.innerText; return !t.includes('上传过程中') && !/上传失败|重新上传/.test(t) && !!${TITLE}})()`,
+  uploadFailed: `(()=>{const t=document.body.innerText; if(/上传失败|上传异常|视频上传失败/.test(t)) return t.match(/.{0,15}(上传失败|上传异常|视频上传失败).{0,25}/)[0]; return null})()`,
 
   // 发布后回传链接：作品管理页的 React 数据里有作品 ID 和发布时间
   links: {
