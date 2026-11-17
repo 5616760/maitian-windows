@@ -4,6 +4,7 @@ import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'
 import { execFileSync, spawnSync } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
+import { IS_WIN, chromeBin, scheduleTask } from './win.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CFG = path.join(ROOT, 'config.json');
@@ -24,10 +25,13 @@ console.log('\n麦田 · 安装向导\n');
 console.log('一、检查环境');
 const [maj, min] = process.versions.node.split('.').map(Number);
 if (maj > 22 || (maj === 22 && min >= 5)) ok(`Node.js ${process.versions.node}`); else { bad(`Node.js ${process.versions.node}，需要 22.5 以上（用到内置 node:sqlite）`); process.exit(1); }
-if (process.platform !== 'darwin') tip('目前只在 macOS 上实测过；其他系统需要自己改开机自启和 NAS 挂载部分');
-const chrome = ['/Applications/Google Chrome.app', path.join(os.homedir(), 'Applications/Google Chrome.app')].find(fs.existsSync);
-chrome ? ok('Google Chrome') : bad('没找到 Google Chrome，请先安装');
-let cf = false; try { execFileSync('which', ['cloudflared'], { stdio: 'pipe' }); cf = true; ok('cloudflared（可选，远程访问用）'); } catch { tip('没装 cloudflared：想在手机上远程看麦田，之后 brew install cloudflared'); }
+if (IS_WIN) tip(`Windows 移植版：开机自启改用「任务计划」，NAS 挂载改用 net use（config.nasDrive 指定盘符）`);
+else if (process.platform !== 'darwin') tip('目前只在 macOS 上实测过；其他系统需要自己改开机自启和 NAS 挂载部分');
+let chrome = null;
+if (IS_WIN) { try { chrome = chromeBin(); } catch {} }
+else chrome = ['/Applications/Google Chrome.app', path.join(os.homedir(), 'Applications/Google Chrome.app')].find(fs.existsSync);
+chrome ? ok('浏览器：' + chrome) : bad('没找到 Google Chrome，请先安装');
+let cf = false; try { execFileSync(IS_WIN ? 'where' : 'which', ['cloudflared'], { stdio: 'pipe', ...(IS_WIN ? { windowsHide: true } : {}) }); cf = true; ok('cloudflared（可选，远程访问用）'); } catch { tip(IS_WIN ? '没装 cloudflared：想在手机上远程看麦田，之后 winget install cloudflared.cloudflared' : '没装 cloudflared：想在手机上远程看麦田，之后 brew install cloudflared'); }
 
 if (fs.existsSync(CFG) && !(await yes('\n已经有 config.json，要重新生成吗？（旧的会备份成 config.json.bak）', false))) {
   console.log('\n保留现有配置。'); rl.close(); process.exit(0);
@@ -40,7 +44,7 @@ const guess = ['../mdldm-maitian-publisher', '../obsidian-x-publisher', '~/mdldm
 let plugin = home(await ask('1. 麦田发布助手（插件仓库）在哪？没装的话先 git clone https://github.com/CzzzzzzJ/mdldm-maitian-publisher.git', guess || path.resolve(ROOT, '../mdldm-maitian-publisher')));
 fs.existsSync(path.join(plugin, 'lib/publish.js')) ? ok('找到插件') : bad('这个目录里没有 lib/publish.js；只看数据（L1）可以先不管，要分发时再改 pluginDir');
 cfg.pluginDir = plugin;
-cfg.rootPath = home(await ask('2. 发布工程放在哪个文件夹？（每期一个子目录，里面有成片、封面、publish.json；NAS 或本地都行）', path.join(os.homedir(), 'Movies/发布工程')));
+cfg.rootPath = home(await ask('2. 发布工程放在哪个文件夹？（每期一个子目录，里面有成片、封面、publish.json；NAS 或本地都行）', path.join(os.homedir(), IS_WIN ? 'Videos/发布工程' : 'Movies/发布工程')));
 fs.mkdirSync(cfg.rootPath, { recursive: true });
 const nas = await ask('3. 如果发布工程在 NAS 上，填 SMB 地址，掉线时自动重挂（比如 smb://用户名@192.168.1.10/共享名；不用就回车）');
 if (nas) cfg.nasUrl = nas; else delete cfg.nasUrl;
@@ -62,7 +66,11 @@ fs.writeFileSync(CFG, JSON.stringify(cfg, null, 2) + '\n');
 ok(`已写入 config.json（网页口令：${cfg.web.key}）`);
 
 console.log('\n三、收尾');
-if (process.platform === 'darwin' && await yes('装成开机自启的守护进程？（推荐，之后自动采数据、发通知）')) {
+if (IS_WIN && await yes('装成登录时自启的守护进程？（用任务计划程序，推荐）')) {
+  const okTask = scheduleTask('maitian-hub', process.execPath, path.join(ROOT, 'src/hub.mjs'), ROOT);
+  okTask ? ok('已创建计划任务 maitian-hub（登录时运行 hub daemon）') : bad('schtasks 创建失败：可手动执行 schtasks /Create /TN maitian-hub /TR "\'node ' + path.join(ROOT, 'src/hub.mjs') + '\' /SC ONLOGON');
+}
+else if (process.platform === 'darwin' && await yes('装成开机自启的守护进程？（推荐，之后自动采数据、发通知）')) {
   spawnSync(path.join(ROOT, 'scripts/install-launchd.sh'), cf && await yes('顺带装远程访问隧道（cloudflared）？', false) ? ['--tunnel'] : [], { stdio: 'inherit' });
 }
 if (chrome && await yes('现在打开专用 Chrome 和各平台页面去登录？（每个平台扫码或登录一次）')) {

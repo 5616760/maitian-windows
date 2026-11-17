@@ -6,6 +6,7 @@ import { SITE } from './site.mjs';
 import { review } from './review.mjs';
 import { accessEmail } from './access.mjs';
 import { initLogin, sessionOk, handleLogin } from './login.mjs';
+import { IS_WIN } from './win.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url)), ROOT = path.resolve(DIR, '..');
 const W = config.web || { port: 8787, key: '' };
@@ -90,14 +91,15 @@ button{width:100%;height:50px;border:0;border-radius:14px;background:#1c1a16;col
 <pre id="c"></pre><script>const code=${JSON.stringify(code).replace(/</g, '\\u003c')};document.getElementById('c').textContent=code;
 document.getElementById('b').onclick=async()=>{try{await navigator.clipboard.writeText(code);b.textContent='已复制 ✓';}catch{const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);b.textContent='长按选中的文字复制';}};</script></body></html>`;
 
-// 缩略图：macOS 自带 sips 缩放转 JPEG，按 原文件路径+修改时间+尺寸 缓存；失败返回 null（退回原图）
+// 缩略图：macOS 用自带 sips，Windows 用 ffmpeg（PATH 里找，找不到退回原图），按 原文件路径+修改时间+尺寸 缓存；失败返回 null
 function thumb(f, w) {
   try {
     const st = fs.statSync(f), dir = path.join(ROOT, 'data', 'thumbs');
     const out = path.join(dir, crypto.createHash('sha1').update(`${f}|${st.mtimeMs}|${w}`).digest('hex') + '.jpg');
     if (fs.existsSync(out)) return out;
     fs.mkdirSync(dir, { recursive: true });
-    execFileSync('/usr/bin/sips', ['-Z', String(w), '-s', 'format', 'jpeg', '-s', 'formatOptions', '78', f, '--out', out], { stdio: 'ignore', timeout: 20000 });
+    if (IS_WIN) execFileSync('ffmpeg', ['-y', '-i', f, '-vf', `scale=${w}:-2:force_original_aspect_ratio=decrease`, '-q:v', '3', out], { stdio: 'ignore', timeout: 20000, windowsHide: true });
+    else execFileSync('/usr/bin/sips', ['-Z', String(w), '-s', 'format', 'jpeg', '-s', 'formatOptions', '78', f, '--out', out], { stdio: 'ignore', timeout: 20000 });
     return fs.existsSync(out) ? out : null;
   } catch { return null; }
 }

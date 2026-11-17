@@ -2,11 +2,65 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT" /></a>
-  <img src="https://img.shields.io/badge/macOS-only-1c1a16?logo=apple" alt="macOS" />
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-1c1a16" alt="macOS / Windows" />
   <img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.5-5FA04E?logo=nodedotjs&logoColor=white" alt="Node 22.5+" />
   <a href="https://github.com/CzzzzzzJ/mdldm-maitian-publisher"><img src="https://img.shields.io/badge/Chrome-麦田发布助手-F2B21B?logo=googlechrome&logoColor=white" alt="麦田发布助手" /></a>
   <a href="https://github.com/CzzzzzzJ/mdldm-maitian/stargazers"><img src="https://img.shields.io/github/stars/CzzzzzzJ/mdldm-maitian?style=social" alt="Stars" /></a>
 </p>
+
+---
+
+## 📌 关于这个仓库：Windows 移植版
+
+> **本仓库是 [@CzzzzzzJ（麦当）](https://github.com/CzzzzzzJ) 原作 [mdldm-maitian](https://github.com/CzzzzzzJ/mdldm-maitian) 的 Windows 移植分支，不是原创项目。**
+>
+> 全部架构、功能设计、平台适配器、UI 与文档均来自原作者。原作者把整套系统完整开源（主仓 MIT、发布助手 Apache-2.0），才有了这个 Windows 版本的可能。**如果你觉得它好用，请去原仓库点 Star，那才是对作者真正的支持。**
+>
+> - 原作主仓：https://github.com/CzzzzzzJ/mdldm-maitian
+> - 原作发布助手：https://github.com/CzzzzzzJ/mdldm-maitian-publisher
+> - 作者主页：https://github.com/CzzzzzzJ
+
+### 本分支做了什么
+
+原作 README 明确写了「macOS-only」。本分支只做**平台适配**，不改产品逻辑，让它在 Windows 上能跑：
+
+| 改动 | 原实现（macOS） | 本分支（Windows） |
+|---|---|---|
+| 浏览器路径 | 硬编码 `/Applications/Google Chrome.app/...` | 自动探测 Program Files / Program Files (x86) / LocalAppData，兜底 Edge |
+| 查端口进程 | `lsof -ti` | `netstat -ano` 解析 PID |
+| 窗口置前 | `osascript` | PowerShell `AppActivate`（失败不影响功能） |
+| 打开 Chrome | `open -g -a "Google Chrome"` | 直接 spawn chrome.exe |
+| NAS 挂载 | `osascript mount volume` + `diskutil` | `net use` 映射盘符（config 新增 `nasDrive`） |
+| 缩略图 | `/usr/bin/sips` | `ffmpeg`（找不到则退回原图） |
+| 防休眠 | `caffeinate` | PowerShell 调 `SetThreadExecutionState` |
+| 开机自启 | launchd plist | 启动文件夹快捷方式（免管理员权限） |
+| 模块路径 | `new URL(import.meta.url).pathname` | `fileURLToPath()`（Windows 下前者会得到 `/C:/...`） |
+| 动态加载插件 | `import(绝对路径)` | `pathToFileURL().href`（Windows 下裸路径会被当成 `c:` 协议） |
+| 默认工程目录 | `~/Movies/发布工程` | `~/Videos/发布工程` |
+
+新增文件仅一个：`src/win.mjs`（平台适配层，约 130 行）。其余为就地 `if (IS_WIN)` 分支，**macOS 路径行为保持原样**。
+
+### Windows 安装
+
+```powershell
+git clone <本仓库地址> maitian
+cd maitian
+node src/demo.mjs                    # 先用假数据看效果：http://localhost:8788/?key=demo
+node src/init.mjs                    # 安装向导（会生成 config.json）
+```
+
+需要：Windows 10/11、Node.js ≥ 22.5、Google Chrome、可选 ffmpeg（缩略图）。
+
+装好后加载插件：Chrome → `chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `publisher/` 目录。
+
+**已验证**：demo 全链路、`hub doctor` 七平台页面打开与登录检测、`hub daemon` 常驻 + web 面板、CDP 上传文件（`DOM.setFileInputFiles`）、登录自启。
+**未验证**：各平台真实上传发布流程（需登录账号后逐平台实测，属风控敏感操作）。
+
+### 原作者的边界仍然有效
+
+原作的核心原则本分支**完全保留**：国内四家（B站/抖音/小红书/视频号）只填写、不发布，最后一下由你自己点；每平台只传一次；小红书走最保守路径。请勿改成全自动——这是原作者用真实风控经验换来的设计。
+
+---
 
 <p align="center">
   <a href="#一行装好">一行装好</a> ·

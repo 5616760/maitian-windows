@@ -3,10 +3,12 @@
 import { spawn, execFileSync } from 'node:child_process';
 import os from 'node:os'; import path from 'node:path'; import fs from 'node:fs';
 import { config } from './feishu.mjs';
+import { IS_WIN, chromeBin, pidsOnPort, bringToFront } from './win.mjs';
 
 const PORT = config.chromePort || 9333;
 const PROFILE = (config.chromeProfile || '~/publish-hub/chrome-profile').replace(/^~/, os.homedir());
-const BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const MAC_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const bin = () => IS_WIN ? chromeBin() : MAC_BIN;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 let ws = null, seq = 0;
@@ -23,12 +25,12 @@ export async function launchChrome({ foreground = false } = {}) {
     fs.mkdirSync(PROFILE, { recursive: true });
     const args = [`--user-data-dir=${PROFILE}`, `--remote-debugging-port=${PORT}`, '--no-first-run', '--no-default-browser-check',
       '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--window-size=1500,1000'];
-    spawn(BIN, args, { detached: true, stdio: 'ignore' }).unref();
+    spawn(bin(), args, { detached: true, stdio: 'ignore', ...(IS_WIN ? { windowsHide: true } : {}) }).unref();
     for (let i = 0; i < 30; i++) { await sleep(500); try { await version(); break; } catch { if (i === 29) throw new Error('专用 Chrome 没启动起来'); } }
   }
-  if (foreground) { try { execFileSync('osascript', ['-e', `tell application "System Events" to set frontmost of (first process whose unix id is ${await pid()}) to true`]); } catch { /* 不影响 */ } }
+  if (foreground) { if (IS_WIN) bringToFront(); else { try { execFileSync('osascript', ['-e', `tell application "System Events" to set frontmost of (first process whose unix id is ${await pid()}) to true`]); } catch { /* 不影响 */ } } }
 }
-async function pid() { return execFileSync('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN']).toString().trim().split('\n')[0]; }
+async function pid() { if (IS_WIN) return pidsOnPort(PORT)[0]; return execFileSync('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN']).toString().trim().split('\n')[0]; }
 
 let connecting = null;
 function connect() {

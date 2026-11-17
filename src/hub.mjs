@@ -11,6 +11,8 @@
 //   hub metrics [id]                            采集流量并发日报
 //   hub daemon                                  常驻：到点自动取链接、提醒还没点发布的平台
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import crypto from 'node:crypto'; import { execFileSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { IS_WIN, portInUse, openInChrome, mountNas, keepAwakeOn } from './win.mjs';
 import { db, NAMES, LOCKED, STATE_CN, upsertEpisode, getTask, getTasks, setTask, log, episodes, getEpisode, recentLogs, getMeta, setMeta, saveMetric, prevMetric, saveSnapshot } from './db.mjs';
 import { collectors } from './metrics.mjs';
 import { boardSync } from './board.mjs';
@@ -110,7 +112,7 @@ async function submitOne() {
 async function run() {
   const dir = path.resolve(args[1] || '');
   if (!fs.existsSync(path.join(dir, 'publish.json'))) throw new Error(`${dir} 里没有 publish.json`);
-  try { execFileSync('node', [path.join(config.pluginDir, 'tools/validate.mjs'), dir], { stdio: 'pipe' }); }
+  try { execFileSync(process.execPath, [path.join(config.pluginDir, 'tools/validate.mjs'), dir], { stdio: 'pipe', ...(IS_WIN ? { windowsHide: true } : {}) }); }
   catch (e) { throw new Error(`校验没通过：\n${(e.stdout || '').toString().slice(-800)}`); }
   const pj = loadProject(dir), ep = { id: pj.id, episode: pj.episode, name: pj.name, dir, schedule: pj.schedule || null };
   upsertEpisode(ep); saveSnapshot(ep.id, pj, true);
@@ -274,6 +276,11 @@ async function doctor() {
 async function ensureNas() {
   const ok = () => { try { fs.accessSync(config.rootPath); return true; } catch { return false; } };
   if (ok()) return true;
+  if (IS_WIN) {
+    // Windows：若配了 nasUrl 且 rootPath 在某盘符下，尝试 net use 重新映射
+    if (config.nasUrl) { try { mountNas(config.nasUrl, config.nasDrive || 'Z:'); } catch {} }
+    return ok();
+  }
   // 2026-11-14：NAS 掉线重连后，macOS 有时把它挂到「…-1」，原路径就读不到了（封面全挂、NAS 灯变红）。
   // 发现同一个共享挂在带后缀的路径上，先卸掉再按原路径挂回来
   try {
@@ -289,14 +296,22 @@ async function ensureNas() {
 // X 长文模式：到点前启动插件仓库里的 tools/x-article-quote.mjs（走日常 Chrome 里插件的开发桥）
 const extId = () => config.extensionId || [...crypto.createHash('sha256').update(path.resolve(config.pluginDir)).digest('hex').slice(0, 32)].map(c => String.fromCharCode(97 + parseInt(c, 16))).join('');
 function startArticleJob(ep, pj) {
-  const x = pj.platforms.x, dir = ep.dir, logf = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'data', `x-article-${ep.id}.log`);
+  const HERE = path.dirname(fileURLToPath(import.meta.url));
+  const x = pj.platforms.x, dir = ep.dir, logf = path.join(HERE, '..', 'data', `x-article-${ep.id}.log`);
   const textf = path.join(path.dirname(logf), `x-article-${ep.id}.txt`); fs.writeFileSync(textf, x.text || '');
-  try { execFileSync('lsof', ['-iTCP:8765', '-sTCP:LISTEN'], { stdio: 'pipe' }); }
-  catch { spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore' }).unref(); }
-  try { execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${extId()}/sidepanel.html`], { stdio: 'pipe' }); } catch {}
+  if (IS_WIN) { if (!portInUse(8765)) spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore', windowsHide: true }).unref(); }
+  else { try { execFileSync('lsof', ['-iTCP:8765', '-sTCP:LISTEN'], { stdio: 'pipe' }); }
+  catch { spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore' }).unref(); } }
+  if (IS_WIN) openInChrome(`chrome-extension://${extId()}/sidepanel.html`);
+  else try { execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${extId()}/sidepanel.html`], { stdio: 'pipe' }); } catch {}
   const out = fs.openSync(logf, 'a');
-  spawn('caffeinate', ['-dims', process.execPath, path.join(config.pluginDir, 'tools/x-article-quote.mjs'), '--draft', x.article, '--video', path.join(dir, pj.video || '成片.mp4'),
-    '--text', textf, '--at', pj.schedule, '--prep', '20', '--hub-id', ep.id], { cwd: config.pluginDir, detached: true, stdio: ['ignore', out, out], env: { ...process.env, PUBLISH_HUB: path.resolve(path.dirname(logf), '..') } }).unref();
+  const jobArgs = [path.join(config.pluginDir, 'tools/x-article-quote.mjs'), '--draft', x.article, '--video', path.join(dir, pj.video || '成片.mp4'),
+    '--text', textf, '--at', pj.schedule, '--prep', '20', '--hub-id', ep.id];
+  const job = IS_WIN
+    ? spawn(process.execPath, jobArgs, { cwd: config.pluginDir, detached: true, stdio: ['ignore', out, out], windowsHide: true, env: { ...process.env, PUBLISH_HUB: path.resolve(path.dirname(logf), '..') } })
+    : spawn('caffeinate', ['-dims', process.execPath, ...jobArgs], { cwd: config.pluginDir, detached: true, stdio: ['ignore', out, out], env: { ...process.env, PUBLISH_HUB: path.resolve(path.dirname(logf), '..') } });
+  if (IS_WIN) { keepAwakeOn(); }
+  job.unref();
   log(ep.id, 'x', 'article-job', `启动长文脚本，日志 ${logf}`);
 }
 
@@ -341,7 +356,7 @@ async function daemon() {
         const zt = tasks.find(t => t.platform === 'zsz');
         if (zt && zt.state === 'pending' && sched && Date.now() >= sched - ZSZ_LEAD * MIN && Date.now() < sched + 6 * 60 * MIN && every(`zszrun:${ep.id}`, 20 * MIN)) {
           log(ep.id, 'zsz', 'deferred-run', '定时前自动建课');
-          execFileSync('node', [path.join(path.dirname(new URL(import.meta.url).pathname), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN });
+          execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN, ...(IS_WIN ? { windowsHide: true } : {}) });
         }
         if (zt && zt.state === 'scheduled' && every(`zszcheck:${ep.id}`, 10 * MIN)) {
           const pj0 = loadProject(ep.dir); const cs = await zszCourses(pj0.platforms.zsz.title).catch(() => []);
