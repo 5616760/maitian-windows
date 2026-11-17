@@ -35,6 +35,31 @@ export const followerCollectors = {
     const history = [...text.matchAll(/(\d{4})\/(\d{1,2})\/(\d{1,2}) \| (-?[\d,]+) \| ([\d,]+) \| ([\d,]+) \| ([\d,]+)/g)].map(m => ({ day: `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`, total: num(m[7]), gain: num(m[5]), loss: num(m[6]) }));
     return { total, history };
   },
+  async weixin() {
+    // 公众号后台：首页 cgiData.total_friend_cnt = 总用户数；「用户分析」页内联 CGI_DATA 带近 30 天累计/新增/取关
+    const r = await withTab('https://mp.weixin.qq.com/', async (t) => {
+      await sleep(4000);
+      return evaluate(t, `(async()=>{
+        const tok = (location.href.match(/token=(\\d+)/)||[])[1];
+        if (!tok) return null;
+        const home = await (await fetch('/cgi-bin/home?t=home/index&lang=zh_CN&token='+tok,{credentials:'include'})).text();
+        const total = Number((home.match(/total_friend_cnt:\\s*'(\\d+)'/)||[])[1]);
+        const html = await (await fetch('/misc/useranalysis?token='+tok+'&lang=zh_CN',{credentials:'include'})).text();
+        const i = html.indexOf("CGI_DATA['pages/statistics/user_statistics']");
+        const rows = [];
+        if (i >= 0) {
+          // 这段是 JS 对象字面量（键不带引号、还有 '1' * 1），不是严格 JSON，按行抠
+          const seg = html.slice(i, html.indexOf('</script>', i));
+          for (const m of seg.matchAll(/date:\\s*"(\\d{4}-\\d{2}-\\d{2})"[\\s\\S]{0,240}?cancel_user:\\s*(-?\\d+),[\\s\\S]{0,80}?cumulate_user:\\s*(\\d+),[\\s\\S]{0,120}?new_user:\\s*(\\d+)/g)) {
+            rows.push({ day: m[1], total: Number(m[3]), gain: Number(m[4]), loss: Number(m[2]) });
+          }
+        }
+        return { total: Number.isFinite(total) ? total : null, rows };
+      })()`);
+    });
+    if (!r || r.total == null) return null;
+    return { total: r.total, history: (r.rows || []).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.day) && Number.isFinite(x.total)) };
+  },
   async youtube() {
     const text = await withTab('https://studio.youtube.com/', async (t) => { for (let i = 0; i < 8; i++) { await sleep(2500); const s = await evaluate(t, `document.body.innerText`).catch(() => ''); if (/当前订阅人数|Current subscribers/.test(s)) return s; } return ''; }, { wait: 9000 });
     const total = num(((text || '').match(/(?:当前订阅人数|Current subscribers)\s*\n?\s*([\d,.]+\s*[万KM]?)/) || [])[1]);
@@ -78,10 +103,13 @@ export function saveFollowers(platform, r) {
   for (const h of hist) { if (h.total == null || (has.get(h.day, platform) || {}).source === 'live') continue; up.run(h.day, platform, h.total, h.gain ?? (h.net > 0 ? h.net : null), h.loss ?? null, 'backfill', now); n++; }
   return n;
 }
+// 本 fork 已下线的平台（大屏隐藏、适配器移除），采集器留着但默认不跑
+const DISABLED = ['youtube', 'x', 'instagram'];
 export async function collectFollowers(only, skip = []) {
   const out = {};
   for (const [p, fn] of Object.entries(followerCollectors)) {
     if ((only && !only.includes(p)) || skip.includes(p)) continue;
+    if (!only && DISABLED.includes(p)) continue;
     try { const r = await fn(); if (!r) { out[p] = '没读到'; continue; } const n = saveFollowers(p, r); out[p] = { total: r.total, backfilled: n }; }
     catch (e) { out[p] = '出错：' + e.message.slice(0, 80); }
   }

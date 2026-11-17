@@ -40,7 +40,11 @@
 
 新增文件仅一个：`src/win.mjs`（平台适配层，约 130 行）。其余为就地 `if (IS_WIN)` 分支，**macOS 路径行为保持原样**。
 
-另外顺手补了一处数据缺陷：原版抖音采集器只取当日粉丝数、`history: []`，所以大屏上抖音永远没有折线图。本分支改为同时请求创作者中心总览接口（`/aweme/janus/creator/data/overview/all/?last_days_type=3`），可一次回填近 30 天粉丝曲线；该接口在页面内 `fetch` 即可，不需要 `msToken`/`a_bogus` 签名。
+另外顺手补了两处数据缺陷：
+
+- **抖音**：原版采集器只取当日粉丝数、`history: []`，所以大屏上抖音永远没有折线图。本分支改为同时请求创作者中心总览接口（`/aweme/janus/creator/data/overview/all/?last_days_type=3`），可一次回填近 30 天粉丝曲线；该接口在页面内 `fetch` 即可，不需要 `msToken`/`a_bogus` 签名。
+- **公众号**：新增粉丝采集器（`weixin`），从后台首页 `cgiData.total_friend_cnt` 取总用户数，「用户分析」页内联的 `CGI_DATA` 取近 30 天累计/新增/取关，公众号卡片因此也有数字和折线。
+- 已下线平台（YouTube / X / Instagram）的采集器保留代码但默认不跑（`DISABLED` 列表），避免每次采集白等。
 
 ### Windows 安装
 
