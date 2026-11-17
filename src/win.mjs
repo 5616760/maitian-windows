@@ -105,18 +105,17 @@ function startupDir() {
 }
 
 // 用 VBScript 建一个带参数的快捷方式（WScript.Shell，免提权）
-export function scheduleTask(name, nodePath, scriptPath, cwd) {
+export function scheduleTask(name, nodePath, scriptPath, cwd, args = ['daemon']) {
   try {
     const dir = startupDir(); fs.mkdirSync(dir, { recursive: true });
     const lnk = path.join(dir, `${name}.lnk`);
     const vbs = path.join(dir, `${name}.vbs`);
-    const target = `"${nodePath}" "${scriptPath}"`;
     fs.writeFileSync(vbs, [
       `Set fso = CreateObject("Scripting.FileSystemObject")`,
       `Set sh = CreateObject("WScript.Shell")`,
       `Set lnk = sh.CreateShortcut("${lnk.replace(/\\/g, '\\\\')}")`,
       `lnk.TargetPath = "${nodePath}"`,
-      `lnk.Arguments = "${scriptPath} daemon"`,
+      `lnk.Arguments = "${[scriptPath, ...args].join(' ')}"`,
       `lnk.WorkingDirectory = "${(cwd || '').replace(/\\/g, '\\\\')}"`,
       `lnk.WindowStyle = 7`,
       `lnk.Save`,

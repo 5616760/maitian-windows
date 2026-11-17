@@ -62,6 +62,18 @@ node src/init.mjs                    # 安装向导（会生成 config.json）
 **已验证**：demo 全链路、`hub doctor` 七平台页面打开与登录检测、`hub daemon` 常驻 + web 面板、CDP 上传文件（`DOM.setFileInputFiles`）、登录自启。
 **未验证**：各平台真实上传发布流程（需登录账号后逐平台实测，属风控敏感操作）。
 
+### 启动与保活（Windows 上补的）
+
+原版靠 launchd 守着，macOS 会自己重启进程；Windows 的启动文件夹不会，daemon 挂掉后大屏就一直 `ERR_CONNECTION_REFUSED`。本分支因此多做了两件事：
+
+```bash
+node src/hub.mjs up      # 后台拉起监督器（关掉终端也不影响），已在跑则只提示地址
+```
+
+- **`src/supervise.mjs`**：监督器。daemon 退出就自动拉起，10s → 20s → 40s 退避，每次退出码和存活时长都记进 `data/supervise.log`。
+- **daemon 自带日志**：Windows 从启动文件夹拉起的进程没有控制台，所以 `hub daemon` 现在把 stdout/stderr 和 `uncaughtException`/`unhandledRejection` 都写进 `data/daemon.log`，带时间戳和 pid。
+- 开机自启项（启动文件夹 `maitian-hub.lnk`）指向 `supervise.mjs` 而不是 `hub.mjs daemon`，这样开机后单次崩溃也能自愈。
+
 ### 同步上游更新
 
 本仓库是 GitHub 上的 **fork**（parent: `CzzzzzzJ/mdldm-maitian`），保留完整上游提交历史。跟进原作者更新：

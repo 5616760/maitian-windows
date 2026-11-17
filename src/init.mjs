@@ -66,9 +66,10 @@ fs.writeFileSync(CFG, JSON.stringify(cfg, null, 2) + '\n');
 ok(`已写入 config.json（网页口令：${cfg.web.key}）`);
 
 console.log('\n三、收尾');
-if (IS_WIN && await yes('装成登录时自启的守护进程？（用任务计划程序，推荐）')) {
-  const okTask = scheduleTask('maitian-hub', process.execPath, path.join(ROOT, 'src/hub.mjs'), ROOT);
-  okTask ? ok('已创建计划任务 maitian-hub（登录时运行 hub daemon）') : bad('schtasks 创建失败：可手动执行 schtasks /Create /TN maitian-hub /TR "\'node ' + path.join(ROOT, 'src/hub.mjs') + '\' /SC ONLOGON');
+if (IS_WIN && await yes('装成登录时自启的守护进程？（启动文件夹快捷方式 + 崩溃自动重启，推荐）')) {
+  // 指向 supervise.mjs 而不是 hub.mjs daemon：daemon 单次崩溃会被监督器自动拉起
+  const okTask = scheduleTask('maitian-hub', process.execPath, path.join(ROOT, 'src/supervise.mjs'), ROOT, []);
+  okTask ? ok('已创建自启项 maitian-hub（登录时运行 supervise.mjs，daemon 崩了会自动重启）') : bad('创建快捷方式失败：可手动把 superviser 放进启动文件夹，或直接运行 node src/supervise.mjs');
 }
 else if (process.platform === 'darwin' && await yes('装成开机自启的守护进程？（推荐，之后自动采数据、发通知）')) {
   spawnSync(path.join(ROOT, 'scripts/install-launchd.sh'), cf && await yes('顺带装远程访问隧道（cloudflared）？', false) ? ['--tunnel'] : [], { stdio: 'inherit' });

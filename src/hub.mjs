@@ -338,8 +338,18 @@ function scanPlans() {
 
 // 常驻：每 5 分钟看一眼。到了定时时间自动取链接；你还没点的平台定时提醒并检查
 async function daemon() {
+  // 日志落盘：Windows 从启动文件夹拉起的进程没有控制台，不写文件就什么都看不到
+  const logDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, 'daemon.log');
+  const stamp = (a) => (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })());
+  const tee = (tag, orig) => (...a) => { const line = `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] ${tag} ${a.map(stamp).join(' ')}\n`; try { fs.appendFileSync(logFile, line); } catch {} orig(...a); };
+  console.log = tee('', console.log.bind(console)); console.error = tee('ERR', console.error.bind(console));
+  process.on('uncaughtException', (e) => { console.error('未捕获异常：' + (e && e.stack || e)); });
+  process.on('unhandledRejection', (e) => { console.error('未处理的 Promise 拒绝：' + (e && e.stack || e)); });
+  process.on('exit', (c) => { try { fs.appendFileSync(logFile, `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] 进程退出，code=${c}\n`); } catch {} });
   if (!process.env.HUB_NO_WEB && config.web) { const { startWeb } = await import('./web.mjs'); startWeb(); }
-  console.log(`发布中控守护进程启动（${drv.mode}）`);
+  console.log(`发布中控守护进程启动（${drv.mode}） pid=${process.pid}`);
   // 开机后 NAS 往往比守护进程晚挂上：等一等，自己挂一次（密码在钥匙串里），5 分钟还不行再报警
   { let ok = false; for (let i = 0; i < 10 && !(ok = await ensureNas()); i++) await drv.sleep(30000);
     if (ok) console.log('NAS 可读'); else await notify('⚠️ 麦田守护进程启动 5 分钟后仍读不到 NAS（已尝试自动挂载），取链接和封面会失败，请检查 NAS 是否开机'); }
@@ -452,6 +462,18 @@ try {
   else if (cmd === 'login') { await drv.openForLogin(ALL.map(i => LOGIN_PAGES[i])); console.log(`专用 Chrome 已打开 ${ALL.length} 个平台页面，登录完运行 hub doctor 检查`); }
   else if (cmd === 'followers') { await drv.ensure(); console.log(JSON.stringify(await collectFollowers(opt('--only') ? opt('--only').split(',') : null, opt('--skip') ? opt('--skip').split(',') : []), null, 1)); }
   else if (cmd === 'daemon') await daemon();
+  else if (cmd === 'up') {   // 后台拉起监督器（daemon 崩了会自动重启），并确认网页能打开
+    if (portInUse((config.web || {}).port || 8787)) { console.log(`网页已经在跑了：http://localhost:${(config.web || {}).port || 8787}/?key=${(config.web || {}).key || ''}`); }
+    else {
+      const sup = path.join(path.dirname(fileURLToPath(import.meta.url)), 'supervise.mjs'), out = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'supervise.out.log');
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      const fd = fs.openSync(out, 'a');
+      const child = spawn(process.execPath, [sup], { cwd: path.join(path.dirname(fileURLToPath(import.meta.url)), '..'), detached: true, windowsHide: true, stdio: ['ignore', fd, fd] });
+      child.unref(); fs.closeSync(fd);
+      for (let i = 0; i < 20 && !portInUse((config.web || {}).port || 8787); i++) await drv.sleep(1000);
+      console.log(`已后台拉起监督器 pid=${child.pid}（日志 data/supervise.log）\n网页：http://localhost:${(config.web || {}).port || 8787}/?key=${(config.web || {}).key || ''}`);
+    }
+  }
   else if (cmd === 'web') { const { startWeb } = await import('./web.mjs'); startWeb(); await new Promise(() => {}); }
   else if (cmd === 'status') {
     const list = args[1] && !args[1].startsWith('--') ? [getEpisode(args[1])].filter(Boolean) : episodes().slice(0, 5);
@@ -459,6 +481,7 @@ try {
     for (const e of list) { console.log(`\n【${e.id}】${e.name}  定时 ${e.schedule || '立即'}\n${table(e.id)}`); if (args.includes('--logs')) console.log(recentLogs(e.id).map(l => `  ${l.ts.slice(11, 19)} ${l.platform} ${l.action} ${l.result}`).join('\n')); }
   } else if (cmd === 'mark') { setTask(args[1], args[2], args[3], (args[4] && !args[4].startsWith('--') ? args[4] : '人工标记'), { url: opt('--url') || undefined }); log(args[1], args[2], 'mark', args[3]); console.log(table(args[1])); }
   else if (cmd === 'notify-test') await notify('发布中控已接通 ✅');
-  else console.log('用法：hub login | doctor | run <工程目录> [--only a,b] [--force] | status [id] [--logs] | sync <id> | followers [--skip xhs] | metrics [id] [--skip xhs] | mark <id> <平台> <状态> | submit <id> <instagram|youtube|x> | daemon');
+  else console.log('用法：hub login | up | doctor | run <工程目录> [--only a,b] [--force] | status [id] [--logs] | sync <id> | followers [--skip xhs] | metrics [id] [--skip xhs] | mark <id> <平台> <状态> | submit <id> <instagram|youtube|x> | daemon');
+  //   up：后台拉起监督器（防火墙关掉终端也不影响），daemon 崩溃自动重启
 } catch (e) { console.error('出错：' + e.message); if (!e.quiet) await notify(`❌ 发布中控出错：${e.message.slice(0, 300)}`); code = 1; }
 await drv.close(); db.close(); process.exit(code);
