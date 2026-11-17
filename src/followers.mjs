@@ -19,8 +19,11 @@ export const followerCollectors = {
     return r && r.total != null && { total: r.total, todayNet: r.inc || 0, history: r.tend.map(x => ({ day: dayOf(x.date_key * 1000), net: x.total_inc })) };
   },
   async douyin() {
-    const n = await withTab('https://creator.douyin.com/creator-micro/home', async (t) => { await sleep(3000); return evaluate(t, `${get('/web/api/media/user/info/')}.then(x=>x.user&&x.user.follower_count)`); });
-    return n != null && { total: n, history: [] };
+    // 首页拿当日实测粉丝数；总览接口顺带给出近 30 天「粉丝总数」曲线（last_days_type=3 → 30 天）
+    const r = await withTab('https://creator.douyin.com/creator-micro/home', async (t) => { await sleep(3000); return evaluate(t, `Promise.all([${get('/web/api/media/user/info/')},${get('/aweme/janus/creator/data/overview/all/?last_days_type=3')}]).then(([a,b])=>({n:a.user&&a.user.follower_count,list:((b.data&&b.data.fans&&b.data.fans.option_list)||[])}))`); });
+    if (!r || r.n == null) return null;
+    const history = r.list.map(x => ({ day: x.date, total: Number(x.count) })).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.day) && Number.isFinite(x.total));
+    return { total: r.n, history };
   },
   async xhs() {
     const r = await withTab('https://creator.xiaohongshu.com/statistics/fans-data', async (t) => { await sleep(3000); return evaluate(t, `${get('/api/galaxy/creator/data/fans/overall_new')}.then(x=>{const d=x.data.thirty,m=(a)=>Object.fromEntries((a||[]).map(i=>[i.date,i.count]));const g=m(d.rise_fans_list),l=m(d.leave_fans_list);return {total:d.fans_count,list:(d.fans_list||[]).map(i=>({date:i.date,total:i.count,gain:g[i.date],loss:l[i.date]}))}})`); });

@@ -40,6 +40,8 @@
 
 新增文件仅一个：`src/win.mjs`（平台适配层，约 130 行）。其余为就地 `if (IS_WIN)` 分支，**macOS 路径行为保持原样**。
 
+另外顺手补了一处数据缺陷：原版抖音采集器只取当日粉丝数、`history: []`，所以大屏上抖音永远没有折线图。本分支改为同时请求创作者中心总览接口（`/aweme/janus/creator/data/overview/all/?last_days_type=3`），可一次回填近 30 天粉丝曲线；该接口在页面内 `fetch` 即可，不需要 `msToken`/`a_bogus` 签名。
+
 ### Windows 安装
 
 ```powershell
